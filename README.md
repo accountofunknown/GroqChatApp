@@ -1,3 +1,4 @@
+[![Build APK](https://github.com/accountofunknown/GroqChatApp/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/accountofunknown/GroqChatApp/actions/workflows/build.yml)
 # Groq Chat (Android)
 
 Kotlin + Jetpack Compose client for the Groq API (OpenAI-compatible, https://api.groq.com/openai/v1).
