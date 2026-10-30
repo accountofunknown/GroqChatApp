@@ -107,7 +107,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # android-emulator-runner runs the script with /usr/bin/sh (dash), which does NOT support pipefail
+      # script is executed line-by-line as separate `sh -c` — must be ONE line
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -117,13 +117,7 @@ jobs:
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            cd "${{ env.PROJECT_ROOT }}"
-            if [ -x ./gradlew ]; then
-              ./gradlew connectedDebugAndroidTest --stacktrace
-            else
-              gradle connectedDebugAndroidTest --stacktrace
-            fi
+          script: cd "${{ env.PROJECT_ROOT }}" && if [ -x ./gradlew ]; then ./gradlew connectedDebugAndroidTest --stacktrace; else gradle connectedDebugAndroidTest --stacktrace; fi
 
       - name: Upload test reports
         if: always()
