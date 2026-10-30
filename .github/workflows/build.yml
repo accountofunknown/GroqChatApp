@@ -1,26 +1,137 @@
-name: Build APK
+name: Build and smoke test
+
 on:
-  workflow_dispatch:
   push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
 jobs:
-  build:
+  unit-and-apk:
+    name: Unit tests + debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          set -euo pipefail
+          if [ -f GroqChatApp.zip ]; then
+            unzip -q -o GroqChatApp.zip
+          fi
+          # Resolve project root (handles nested GroqChatApp/ folders)
+          ROOT=""
+          for d in GroqChatApp/GroqChatApp/GroqChatApp GroqChatApp/GroqChatApp GroqChatApp .; do
+            if [ -f "$d/settings.gradle.kts" ] || [ -f "$d/app/build.gradle.kts" ]; then
+              ROOT="$d"
+              break
+            fi
+          done
+          if [ -z "$ROOT" ]; then
+            ROOT=$(find . -name settings.gradle.kts -not -path '*/.*' | head -1 | xargs -I{} dirname {})
+          fi
+          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Using project root: $ROOT"
+          test -f "$ROOT/app/build.gradle.kts"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew testDebugUnitTest --stacktrace
+          else
+            gradle testDebugUnitTest --stacktrace
+          fi
+
+      - name: Assemble debug APK
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          gradle-version: 8.9
+          name: app-debug
+          path: |
+            ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+  emulator-smoke:
+    name: Emulator smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: unit-and-apk
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Unzip project
-        run: unzip -q GroqChatApp.zip
-      - name: Build
-        working-directory: GroqChatApp
-        run: gradle assembleDebug
-      - uses: actions/upload-artifact@v4
+        run: |
+          set -euo pipefail
+          if [ -f GroqChatApp.zip ]; then
+            unzip -q -o GroqChatApp.zip
+          fi
+          ROOT=""
+          for d in GroqChatApp/GroqChatApp/GroqChatApp GroqChatApp/GroqChatApp GroqChatApp .; do
+            if [ -f "$d/settings.gradle.kts" ] || [ -f "$d/app/build.gradle.kts" ]; then
+              ROOT="$d"
+              break
+            fi
+          done
+          if [ -z "$ROOT" ]; then
+            ROOT=$(find . -name settings.gradle.kts -not -path '*/.*' | head -1 | xargs -I{} dirname {})
+          fi
+          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+          test -f "$ROOT/app/build.gradle.kts"
+
+      - uses: actions/setup-java@v4
         with:
-          name: GroqChat-debug-apk
-          path: GroqChatApp/app/build/outputs/apk/debug/app-debug.apk
-          
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            cd "${{ env.PROJECT_ROOT }}"
+            if [ -x ./gradlew ]; then
+              ./gradlew connectedDebugAndroidTest --stacktrace
+            else
+              gradle connectedDebugAndroidTest --stacktrace
+            fi
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            ${{ env.PROJECT_ROOT }}/app/build/reports/androidTests/**
+            ${{ env.PROJECT_ROOT }}/app/build/outputs/androidTest-results/**
+          if-no-files-found: ignore
