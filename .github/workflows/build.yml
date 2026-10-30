@@ -20,7 +20,6 @@ jobs:
           if [ -f GroqChatApp.zip ]; then
             unzip -q -o GroqChatApp.zip
           fi
-          # Resolve project root (handles nested GroqChatApp/ folders)
           ROOT=""
           for d in GroqChatApp/GroqChatApp/GroqChatApp GroqChatApp/GroqChatApp GroqChatApp .; do
             if [ -f "$d/settings.gradle.kts" ] || [ -f "$d/app/build.gradle.kts" ]; then
@@ -108,6 +107,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # android-emulator-runner runs the script with /usr/bin/sh (dash), which does NOT support pipefail
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -118,7 +118,6 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
-            set -euo pipefail
             cd "${{ env.PROJECT_ROOT }}"
             if [ -x ./gradlew ]; then
               ./gradlew connectedDebugAndroidTest --stacktrace
