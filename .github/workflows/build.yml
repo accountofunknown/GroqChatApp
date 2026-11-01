@@ -59,12 +59,22 @@ jobs:
             gradle assembleDebug --stacktrace
           fi
 
+      - name: Assemble release APK (R8, unsigned)
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleRelease --stacktrace
+          else
+            gradle assembleRelease --stacktrace
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: |
             ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+            ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
 
   emulator-smoke:
